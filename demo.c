@@ -1,4 +1,4 @@
-/* A small toy OCR.
+/* Some code to render text by rendering glyphs from TTF files
  *
  * This software is licensed under the BSD-3-Clause license:
  *
@@ -38,14 +38,8 @@
 
 #include "image.h"
 #include "font.h"
-#include "ocr.h"
 
 #define MAIN_DEBUG_IMAGE    0
-#define MAIN_DEBUG_FONT     1
-
-void e(void) {
-    getchar();
-}
 
 #if MAIN_DEBUG_IMAGE
 static int debug_image(int argc, char **argv) {
@@ -92,7 +86,7 @@ static int debug_image(int argc, char **argv) {
     return 0;
 }
 
-#elif MAIN_DEBUG_FONT
+#else
 static int debug_font(int argc, char **argv) {
     struct font font;
     struct font_renderer renderer;
@@ -239,111 +233,12 @@ static int debug_font(int argc, char **argv) {
 
     return 0;
 }
-#else
-static int ocr(int argc, char **argv) {
-    struct font font;
-    struct image image;
-    struct image out;
-    struct ocr ocr;
-
-    int rc;
-
-    int size = 200;
-
-    if(argc < 3){
-        fprintf(stderr, "USAGE: %s FONT IMAGE\n", *argv);
-    }
-
-    if((rc = font_load(&font, argv[1]))){
-        puts(font_get_error_str(rc));
-
-        return 1;
-    }
-    if((rc = image_load(&image, argv[2]))){
-        puts(image_get_error_str(rc));
-
-        font_free(&font);
-
-        return 1;
-    }
-
-    if((rc = image_create(&out, image.w, image.h, image.ppi))){
-        puts(image_get_error_str(rc));
-
-        font_free(&font);
-
-        return 1;
-    }
-
-    if((rc = ocr_init(&ocr, &font, image.ppi, size))){
-        puts(ocr_get_error_str(rc));
-
-        image_free(&image);
-        font_free(&font);
-
-        return 1;
-    }
-
-    if((rc = ocr_recognise(&ocr, &image))){
-        puts(ocr_get_error_str(rc));
-
-        ocr_free(&ocr);
-        image_free(&image);
-        font_free(&font);
-
-        return 1;
-    }
-
-    memcpy(out.data, image.data, image.w*image.h*sizeof(pixel_t));
-
-    {
-        size_t i;
-
-        for(i=0;i<ocr.boundingbox_count;i++){
-            struct ocr_boundingbox *bb = ocr.boundingboxes+i;
-
-            size_t n;
-
-            for(n=bb->x1;n<bb->x2;n++){
-                out.data[bb->y1*out.w+n] = IMAGE_RGBAINT(255, 0, 0, 0);
-                out.data[bb->y2*out.w+n] = IMAGE_RGBAINT(255, 0, 0, 0);
-            }
-            for(n=bb->y1;n<bb->y2;n++){
-                out.data[n*out.w+bb->x1] = IMAGE_RGBAINT(255, 0, 0, 0);
-                out.data[n*out.w+bb->x2] = IMAGE_RGBAINT(255, 0, 0, 0);
-            }
-            out.data[bb->y2*out.w+bb->x2] = IMAGE_RGBAINT(255, 0, 0, 0);
-        }
-    }
-
-    if((rc = image_write(&out, "out.bmp", IT_BMP, 0))){
-        puts(image_get_error_str(rc));
-
-        font_free(&font);
-        image_free(&image);
-
-        return 1;
-    }
-
-    ocr_free(&ocr);
-    image_free(&image);
-    font_free(&font);
-
-    return 0;
-}
-
 #endif
 
 int main(int argc, char **argv) {
-#if (defined(_WIN32) || defined(_WIN64)) && DEBUG
-    atexit(e);
-#endif
-
 #if MAIN_DEBUG_IMAGE
     return debug_image(argc, argv);
-#elif MAIN_DEBUG_FONT
-    return debug_font(argc, argv);
 #else
-    return ocr(argc, argv);
+    return debug_font(argc, argv);
 #endif
 }

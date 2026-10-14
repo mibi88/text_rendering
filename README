@@ -1,11 +1,10 @@
-                            A small toy OCR
+            Some code to render text using glyphs in TTF fonts
                                by Mibi88
 
-A small toy OCR I started coding a while ago. It is broken and does not work.
-However, parts of it work (more or less), and may be interesting, for instance
-text rendering of TrueType fonts.
+This code is based on the code I made for my OCR a while ago.
 
-Different parts of it can be enabled by the defines in src/main.c. You may want
-to select the thing you want.
+A small demo program can be compiled by running:
 
-It only depends on the libc, it is very portable ANSI C.
+ $ CC=c89 CFLAGS="-Wall -Wextra -Wpedantic" make
+
+It only requires a standard C library.

@@ -1,4 +1,4 @@
-/* A small toy OCR.
+/* Some code to render text by rendering glyphs from TTF files
  *
  * This software is licensed under the BSD-3-Clause license:
  *
@@ -30,90 +30,66 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef OCR_H
-#define OCR_H
+#ifndef IMAGE_H
+#define IMAGE_H
 
-#include "image.h"
-#include "font.h"
+#include <stddef.h>
+#include <limits.h>
 
-struct ocr_boundingbox {
-    struct {
-        font_u32_t code;
-        long int x_offset;
-        long int y_offset;
-        long int x_scale;
-        long int y_scale;
-    } *text;
-
-    size_t x1, y1;
-    size_t x2, y2;
-
-    size_t len;
-    size_t max;
-};
-
-struct ocr_coverage {
-    font_u32_t coverage;
-    struct font_glyph *glyph;
-};
-
-struct ocr {
-    struct font *font;
-
-    struct font_renderer renderer;
-
-    struct ocr_boundingbox *boundingboxes;
-
-    struct ocr_coverage *coverage;
-
-    size_t boundingbox_count;
-
-    size_t line_treshold;
-    size_t char_treshold;
-    size_t min_height;
-
-    size_t min_w_tolerance;
-
-    long int x_offset_min;
-    long int x_offset_max;
-
-    long int y_offset_min;
-    long int y_offset_max;
-
-    long int x_scale_min;
-    long int x_scale_max;
-
-    long int y_scale_min;
-    long int y_scale_max;
-
-    long int scale_step;
-
-    unsigned int high_accuracy : 1;
-};
-
-#define OCR_ERROR_X(x, l) \
-    x(OE_NONE) \
-    x(OE_RENDERER_INIT) \
-    x(OE_MEM) \
-    x(OE_UNSUPPORTED) \
-    l(OE_UNKNOWN)
-
-#define OCR_X_LIST(e) e,
-#define OCR_X_LIST_END(e) e
-
-enum {
-    OCR_ERROR_X(OCR_X_LIST, OCR_X_LIST_END)
-};
-
-#ifndef OCR_IMPL
-#undef OCR_ERROR_X
-#undef OCR_X_LIST
-#undef OCR_X_LIST_END
+#if UINT_MAX >= 4294967295
+typedef unsigned int pixel_t;
+#else
+typedef unsigned long int pixel_t;
 #endif
 
-char *ocr_get_error_str(int error);
-int ocr_init(struct ocr *ocr, struct font *font, int dpi, int max_size);
-int ocr_recognise(struct ocr *ocr, struct image *image);
-void ocr_free(struct ocr *ocr);
+struct image {
+    size_t w, h;
+    unsigned long int ppi;
+    pixel_t *data;
+};
+
+#define IMAGE_ERROR_X(x, l) \
+    x(IE_NONE) \
+    x(IE_OPEN) \
+    x(IE_READ) \
+    x(IE_SEEK) \
+    x(IE_WRITE) \
+    x(IE_SIG) \
+    x(IE_MEM) \
+    x(IE_UNSUPPORTED) \
+    l(IE_UNKNOWN)
+
+#define IMAGE_X_LIST(e) e,
+#define IMAGE_X_LIST_END(e) e
+
+enum {
+    IMAGE_ERROR_X(IMAGE_X_LIST, IMAGE_X_LIST_END)
+};
+
+#ifndef IMAGE_IMPL
+#undef IMAGE_ERROR_X
+#undef IMAGE_X_LIST
+#undef IMAGE_X_LIST_END
+#endif
+
+
+enum {
+    IT_BMP
+};
+
+#define IMAGE_RGBAINT(r, g, b, a) ((pixel_t)(b)| \
+                                  ((pixel_t)(g)<<8)| \
+                                  ((pixel_t)(r)<<16)| \
+                                  ((pixel_t)(a)<<24))
+
+char *image_get_error_str(int error);
+
+int image_load(struct image *img, char *file);
+
+int image_write(struct image *img, char *file, int type, int flags);
+
+int image_create(struct image *img, size_t width, size_t height, size_t ppi);
+
+void image_free(struct image *img);
 
 #endif

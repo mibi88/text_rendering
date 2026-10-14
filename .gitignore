@@ -1,20 +1,8 @@
+*.o
+/.depend
+
 *.bmp
 *.ttf
+*.otf
 
-*.dll
-*.exe
-*.lk1
-*.mk
-*.mk1
-*.sym
-*.map
-*.err
-*.obj
-*.prf
-*.mbr
-*.smp
-*.cbr
-
-/unix/ocr
-/unix/build
-
+/demo
