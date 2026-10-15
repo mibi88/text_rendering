@@ -1523,7 +1523,8 @@ void font_free(struct font *font) {
 int font_renderer_init(struct font_renderer *renderer, struct font *font,
                        font_u32_t dpi, font_u32_t width, font_u32_t height) {
     renderer->data = malloc(width*height);
-    renderer->x_on_line = malloc(font->points_max+1);
+    renderer->x_on_line = malloc((font->points_max+1)*
+                                 sizeof(struct font_renderer_hits));
     if(renderer->data == NULL){
         return FE_MEM;
     }
@@ -1537,8 +1538,9 @@ int font_renderer_init(struct font_renderer *renderer, struct font *font,
 
 #define SIGN(x) ((x) ? (x) < 0 ? -1 : 1 : 0)
 
-static int compare_s32_t(const void *a, const void *b) {
-    return *(font_s32_t*)a < *(font_s32_t*)b ? -1 : 1;
+static int compare_hits(const void *a, const void *b) {
+    return ((struct font_renderer_hits*)a)->x <
+           ((struct font_renderer_hits*)b)->x ? -1 : 1;
 }
 
 struct font_glyph *font_scale_glyph(struct font *font, font_u32_t glyph_id,
@@ -1575,7 +1577,6 @@ struct font_glyph *font_scale_glyph(struct font *font, font_u32_t glyph_id,
         new_glyph->points[i].y = font_scale_size(font, dpi, size,
                                                  glyph->points[i].y);
         new_glyph->points[i].on_curve = glyph->points[i].on_curve;
-        printf("%d, %d\n", new_glyph->points[i].x, new_glyph->points[i].y);
     }
 
     new_glyph->advance_width = font_scale_size(font, dpi, size,
@@ -1602,7 +1603,7 @@ void font_free_glyph(struct font_glyph *glyph) {
 
 void font_renderer_glyph(struct font_renderer *renderer,
                          struct font_glyph *glyph) {
-    font_s32_t *x_on_line = renderer->x_on_line;
+    struct font_renderer_hits *x_on_line = renderer->x_on_line;
 
     font_u32_t i;
 
@@ -1666,7 +1667,8 @@ void font_renderer_glyph(struct font_renderer *renderer,
                         font_s32_t nx = lower.x+(upper.x-lower.x)*(y-lower.y)/
                                         (upper.y-lower.y);
                         if(nx < (font_s32_t)renderer->width){
-                            x_on_line[x_on_line_count++] = nx;
+                            x_on_line[x_on_line_count].x = nx;
+                            x_on_line[x_on_line_count++].direction = direction;
                         }
                     }
                 }
@@ -1687,21 +1689,23 @@ void font_renderer_glyph(struct font_renderer *renderer,
                         font_s32_t nx = lower.x+(upper.x-lower.x)*(y-lower.y)/
                                         (upper.y-lower.y);
                         if(nx < (font_s32_t)renderer->width){
-                            x_on_line[x_on_line_count++] = nx;
+                            x_on_line[x_on_line_count].x = nx;
+                            x_on_line[x_on_line_count++].direction = direction;
                         }
                     }
                 }
             }
 
-            qsort(x_on_line, x_on_line_count, sizeof(font_s32_t),
-                  compare_s32_t);
+            qsort(x_on_line, x_on_line_count,
+                  sizeof(struct font_renderer_hits), compare_hits);
 
-            x_on_line[x_on_line_count++] = renderer->width;
+            x_on_line[x_on_line_count].x = renderer->width;
+            x_on_line[x_on_line_count++].direction = 0;
 
-            next_x = x_on_line[0];
+            next_x = x_on_line[0].x;
             for(i=1;i<x_on_line_count && next_x<0;i++){
-                next_x = x_on_line[i];
-                fill = !fill;
+                next_x = x_on_line[i].x;
+                fill += x_on_line[i-1].direction;
             }
 
             x = 0;
@@ -1715,9 +1719,9 @@ void font_renderer_glyph(struct font_renderer *renderer,
                     x = next_x;
                 }
 
-                next_x = x_on_line[i];
+                next_x = x_on_line[i].x;
 
-                fill = !fill;
+                fill += x_on_line[i-1].direction;
             }
 
             next_x = renderer->width;

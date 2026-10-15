@@ -118,8 +118,13 @@ struct font {
     unsigned int vertical : 1;
 };
 
+struct font_renderer_hits {
+    font_s32_t x;
+    signed char direction;
+};
+
 struct font_renderer {
-    font_s32_t *x_on_line;
+    struct font_renderer_hits *x_on_line;
     unsigned char *data;
 
     font_u32_t dpi;
