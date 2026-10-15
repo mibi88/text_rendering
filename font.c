@@ -1608,56 +1608,49 @@ void font_renderer_glyph(struct font_renderer *renderer,
 
     /* TODO: Optimize this. */
 
+    font_s32_t min_y = renderer->height-1;
+    font_s32_t max_y = 0;
+    font_s32_t min_x = renderer->width-1;
+    font_s32_t max_x = 0;
+
+    memset(renderer->data, 0, renderer->width*renderer->height);
+
     {
         font_u32_t i;
 
         for(i=0;i<glyph->point_count;i++){
-            glyph->points[i].y = glyph->ymax-glyph->points[i].y;
+            font_s32_t x = glyph->points[i].x;
+            font_s32_t y = glyph->ymax-glyph->points[i].y;
+
+            if(y > max_y) max_y = y;
+            if(y < min_y) min_y = y;
+            if(x > max_x) max_x = x;
+            if(x < min_x) min_x = x;
+
+            glyph->points[i].y = y;
         }
     }
 
-    for(i=0;i<glyph->contour_count;i++){
-        font_s32_t min_y = renderer->height-1;
-        font_s32_t max_y = 0;
-        font_s32_t min_x = renderer->width-1;
-        font_s32_t max_x = 0;
+    if(min_y < 0) min_y = 0;
+    if(max_y > (font_s32_t)renderer->height) max_y = renderer->height;
 
-        font_u32_t start_point = i ? glyph->contour_ends[i-1] : 0;
-        font_u32_t end_point = glyph->contour_ends[i];
+    {
+        font_s32_t y;
+        unsigned char *l = renderer->data+min_y*renderer->width;
 
-        memset(renderer->data, 0, renderer->width*renderer->height);
-
-        {
+        for(y=min_y;y<max_y;y++){
             font_u32_t i;
+            font_u32_t x_on_line_count = 0;
 
-            for(i=start_point;i<=end_point;i++){
-                font_s32_t x = glyph->points[i].x;
-                font_s32_t y = glyph->points[i].y;
+            font_s32_t x = min_x;
+            font_s32_t next_x;
+            font_s32_t fill = 0;
 
-                if(y > max_y) max_y = y;
-                if(y < min_y) min_y = y;
-                if(x > max_x) max_x = x;
-                if(x < min_x) min_x = x;
+            for(i=0;i<glyph->contour_count;i++){
+                font_u32_t start_point = i ? glyph->contour_ends[i-1]+1 : 0;
+                font_u32_t end_point = glyph->contour_ends[i];
 
-                glyph->points[i].x = x;
-                glyph->points[i].y = y;
-            }
-        }
-
-        if(min_y < 0) min_y = 0;
-        if(max_y > (font_s32_t)renderer->height) max_y = renderer->height;
-
-        {
-            font_s32_t y;
-            unsigned char *l = renderer->data+min_y*renderer->width;
-
-            for(y=min_y;y<max_y;y++){
                 font_u32_t i;
-                font_u32_t x_on_line_count = 0;
-
-                font_s32_t x = min_x;
-                font_s32_t next_x;
-                font_s32_t fill = 0;
 
                 for(i=start_point+1;i<=end_point;i++){
                     struct font_point lower =
@@ -1698,42 +1691,21 @@ void font_renderer_glyph(struct font_renderer *renderer,
                         }
                     }
                 }
+            }
 
-                qsort(x_on_line, x_on_line_count, sizeof(font_s32_t),
-                      compare_s32_t);
-                {
-                    font_u32_t i;
+            qsort(x_on_line, x_on_line_count, sizeof(font_s32_t),
+                  compare_s32_t);
 
-                    for(i=0;i<x_on_line_count;i++) printf("%d ", x_on_line[i]);
-                    puts("");
-                }
+            x_on_line[x_on_line_count++] = renderer->width;
 
-                x_on_line[x_on_line_count++] = renderer->width;
+            next_x = x_on_line[0];
+            for(i=1;i<x_on_line_count && next_x<0;i++){
+                next_x = x_on_line[i];
+                fill = !fill;
+            }
 
-                next_x = x_on_line[0];
-                for(i=1;i<x_on_line_count && next_x<0;i++){
-                    next_x = x_on_line[i];
-                    fill = !fill;
-                }
-
-                x = 0;
-                for(;i<x_on_line_count;i++){
-                    if(fill){
-                        for(;x<next_x;x++,l++){
-                            *l = 255;
-                        }
-                    }else{
-                        l += next_x-x;
-                        x = next_x;
-                    }
-
-                    next_x = x_on_line[i];
-
-                    fill = !fill;
-                }
-
-                next_x = renderer->width;
-
+            x = 0;
+            for(;i<x_on_line_count;i++){
                 if(fill){
                     for(;x<next_x;x++,l++){
                         *l = 255;
@@ -1742,6 +1714,21 @@ void font_renderer_glyph(struct font_renderer *renderer,
                     l += next_x-x;
                     x = next_x;
                 }
+
+                next_x = x_on_line[i];
+
+                fill = !fill;
+            }
+
+            next_x = renderer->width;
+
+            if(fill){
+                for(;x<next_x;x++,l++){
+                    *l = 255;
+                }
+            }else{
+                l += next_x-x;
+                x = next_x;
             }
         }
     }
