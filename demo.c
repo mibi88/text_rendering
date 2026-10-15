@@ -87,11 +87,35 @@ static int debug_image(int argc, char **argv) {
 }
 
 #else
+static void font_renderer_to_image(struct font_renderer *renderer,
+                                   struct image *image,
+                                   font_s32_t sx, font_s32_t sy) {
+    font_u32_t x, y;
+    /* TODO: Clip the area that can be drawn on the image first */
+
+    for(y=0;y<renderer->height;y++){
+        for(x=0;x<renderer->width;x++){
+            font_s32_t ix = (font_s32_t)x+sx;
+            font_s32_t iy = (font_s32_t)y+sy;
+
+            if(ix >= 0 && ix < (font_s32_t)image->w &&
+               iy >= 0 && iy < (font_s32_t)image->h){
+                pixel_t c = renderer->data[y*renderer->width+x];
+                if(c){
+                    c = IMAGE_RGBAINT(255-c, 255-c, 255-c, 0);
+
+                    image->data[iy*image->w+ix] = c;
+                }
+            }
+        }
+    }
+}
+
 static int debug_font(int argc, char **argv) {
     struct font font;
     struct font_renderer renderer;
     struct image image;
-    struct font_glyph *glyph;
+    font_u32_t glyph;
     wchar_t *str;
     char *tmp;
     size_t len;
@@ -119,7 +143,11 @@ static int debug_font(int argc, char **argv) {
 
         return 1;
     }
-    if((rc = font_renderer_init(&renderer, &font, dpi, size))){
+    if((rc = font_renderer_init(&renderer, &font, dpi,
+                                font_scale_size(&font, dpi, size,
+                                                font.xmax-font.xmin),
+                                font_scale_size(&font, dpi, size,
+                                                font.ymax-font.ymin)))){
         puts(font_get_error_str(rc));
 
         font_free(&font);
@@ -154,7 +182,7 @@ static int debug_font(int argc, char **argv) {
 
     w = 0;
     line_w = 0;
-    h = renderer.h;
+    h = renderer.height;
     for(i=0;str[i];i++){
         wchar_t c = str[i];
 
@@ -162,7 +190,7 @@ static int debug_font(int argc, char **argv) {
             if(line_w > w) w = line_w;
             line_w = 0;
 
-            h += renderer.h;
+            h += renderer.height;
 
             continue;
         }
@@ -170,9 +198,8 @@ static int debug_font(int argc, char **argv) {
         /* TODO: Support UTF-8. */
         glyph = font_lookup_char(&font, c);
 
-        if(glyph == NULL) glyph = font.glyphs;
-
-        line_w += font_scale_size(&font, dpi, size, glyph->advance_width);
+        line_w += font_scale_size(&font, dpi, size,
+                                  font.glyphs[glyph].advance_width);
     }
     if(line_w > w) w = line_w;
 
@@ -190,11 +217,15 @@ static int debug_font(int argc, char **argv) {
     x = 0;
     y = 0;
     for(i=0;str[i];i++){
+        struct font_glyph *scaled_glyph;
         wchar_t c = str[i];
+
+        font_s32_t x_offset;
+        font_s32_t y_offset;
 
         if(c == '\n'){
             x = 0;
-            y += renderer.h;
+            y += renderer.height;
 
             continue;
         }
@@ -202,18 +233,26 @@ static int debug_font(int argc, char **argv) {
         /* TODO: Support UTF-8. */
         glyph = font_lookup_char(&font, c);
 
-        if(glyph == NULL){
-            fputs("Glyph not found!\n", stderr);
+        scaled_glyph = font_scale_glyph(&font, glyph, size, dpi);
+        if(scaled_glyph == NULL){
+            fprintf(stderr, "%s: Failed to scale glyph!\n", *argv);
 
-            glyph = font.glyphs;
+            continue;
         }
 
-        font_renderer_glyph(&renderer, &font, glyph, size);
-        font_renderer_to_image(&renderer, &image,
-                               x+renderer.x+renderer.left_side_bearing,
-                               y+renderer.max_ascender-renderer.baseline);
+        x_offset = font_scale_size(&font, dpi, size,
+                                   -font.glyphs[glyph].xmin)+
+                   scaled_glyph->left_side_bearing;
+        y_offset = font_scale_size(&font, dpi, size,
+                                   font.max_ascender)-scaled_glyph->ymax;
 
-        x += font_scale_size(&font, dpi, size, glyph->advance_width);
+        font_renderer_glyph(&renderer, scaled_glyph);
+        font_renderer_to_image(&renderer, &image,
+                               x+x_offset, y_offset);
+
+        x += scaled_glyph->advance_width;
+
+        font_free_glyph(scaled_glyph);
     }
 
     if((rc = image_write(&image, argv[3], IT_BMP, 0))){

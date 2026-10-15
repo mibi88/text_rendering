@@ -1475,6 +1475,8 @@ LOAD:
 
     font->style = style;
 
+    font->points_max = points_max;
+
     return FE_NONE;
 }
 
@@ -1483,7 +1485,7 @@ font_s32_t font_scale_size(struct font *font, font_s32_t dpi,
     return size*points*dpi/(72*font->units_per_em);
 }
 
-struct font_glyph *font_lookup_char(struct font *font, font_u32_t code) {
+font_u32_t font_lookup_char(struct font *font, font_u32_t code) {
     font_u32_t a = 0;
     font_u32_t b = font->glyph_count-1;
 
@@ -1493,13 +1495,13 @@ struct font_glyph *font_lookup_char(struct font *font, font_u32_t code) {
         if(font->cmap[m]->code > code){
             b = m;
         }else if(font->cmap[m]->code == code){
-            return font->cmap[m];
+            return font->cmap[m]-font->glyphs;
         }else if(font->cmap[m]->code < code){
             a = m+1;
         }
     }
 
-    return NULL;
+    return 0;
 }
 
 void font_free(struct font *font) {
@@ -1518,405 +1520,244 @@ void font_free(struct font *font) {
     font->glyph_count = 0;
 }
 
-#define ABS(x) ((x) < 0 ? -(x) : (x))
-
-#if FILL
-#define SET(x, y, direction) \
-    { \
-        (void)direction; \
- \
-        if((x) >= 0 && (x) < (font_s32_t)renderer->w && \
-           (y) >= 0 && (y) < (font_s32_t)renderer->h){ \
-            renderer->b[(y)*renderer->row_bytes+(x)/8] ^= 1<<((x)%8); \
-        }else if((x) < 0 && \
-                 (y) >= 0 && (y) < (font_s32_t)renderer->h){ \
-            renderer->b[(y)*renderer->row_bytes] ^= 1; \
-        } \
-    }
-#else
-#define SET(x, y, direction) \
-    { \
-        (void)direction; \
- \
-        if((x) >= 0 && (x) < (font_s32_t)renderer->w && \
-           (y) >= 0 && (y) < (font_s32_t)renderer->h){ \
-            renderer->b[(y)*renderer->row_bytes+(x)/8] |= 1<<((x)%8); \
-        } \
-    }
-#endif
-
-
-static void line(struct font_renderer *renderer,
-                 font_s16_t x1, font_s16_t y1,
-                 font_s16_t x2, font_s16_t y2) {
-    unsigned char dir = y1 < y2;
-
-#if FILL
-    if(y1 == y2) return;
-#endif
-
-    if(ABS(x2-x1) < ABS(y2-y1)){
-        if(y1 < y2){
-            font_s16_t dx2 = ABS(x2-x1)*2;
-            font_s16_t dy = y2-y1;
-            font_s16_t e = dy;
-            font_s16_t a = x1 < x2 ? 1 : -1;
-            dy *= 2;
-
-            for(;y1<y2;y1++){
-                SET(x1, y1, dir);
-                e += dx2;
-                if(e >= dy){
-                    x1 += a;
-                    e -= dy;
-                }
-            }
-        }else{
-            font_s16_t dx2 = ABS(x2-x1)*2;
-            font_s16_t dy = y1-y2;
-            font_s16_t e = dy;
-            font_s16_t a = x1 < x2 ? 1 : -1;
-            dy *= 2;
-
-            for(;y1>y2;y1--){
-#if !FILL
-                SET(x1, y1, dir);
-#endif
-                e += dx2;
-                if(e >= dy){
-                    x1 += a;
-                    e -= dy;
-                }
-#if FILL
-                SET(x1, y1-1, dir);
-#endif
-            }
-        }
-    }else{
-        if(x1 < x2){
-            if(y1 < y2){
-                font_s16_t dy2 = ABS(y2-y1)*2;
-                font_s16_t dx = x2-x1;
-                font_s16_t e = dx;
-                dx *= 2;
-
-#if FILL
-                SET(x1, y1, dir);
-#endif
-
-                for(;x1<x2;x1++){
-#if !FILL
-                    SET(x1, y1, dir);
-#endif
-                    e += dy2;
-
-                    if(e >= dx){
-                        y1++;
-#if FILL
-                        if(y1 != y2) SET(x1+1, y1, dir);
-#endif
-                        e -= dx;
-                    }
-                }
-            }else{
-                font_s16_t dy2 = ABS(y2-y1)*2;
-                font_s16_t dx = x2-x1;
-                font_s16_t e = dx;
-                dx *= 2;
-
-                for(;x1<x2;x1++){
-#if !FILL
-                    SET(x1, y1, dir);
-#endif
-                    e += dy2;
-                    if(e >= dx){
-                        y1--;
-#if FILL
-                        SET(x1+1, y1, dir);
-#endif
-                        e -= dx;
-                    }
-                }
-            }
-        }else{
-            if(y1 < y2){
-                font_s16_t dy2 = ABS(y2-y1)*2;
-                font_s16_t dx = x1-x2;
-                font_s16_t e = dx;
-                dx *= 2;
-
-                for(;x1>x2;x1--){
-#if !FILL
-                    SET(x1, y1, dir);
-#endif
-                    e += dy2;
-                    if(e >= dx){
-#if FILL
-                        SET(x1, y1, dir);
-#endif
-                        y1++;
-                        e -= dx;
-                    }
-                }
-            }else{
-                font_s16_t dy2 = ABS(y2-y1)*2;
-                font_s16_t dx = x1-x2;
-                font_s16_t e = dx;
-#if FILL
-                font_s16_t y = y1;
-#endif
-                dx *= 2;
-
-                for(;x1>x2;x1--){
-#if !FILL
-                    SET(x1, y1, dir);
-#endif
-                    e += dy2;
-                    if(e >= dx){
-#if FILL
-                        if(y1 != y) SET(x1, y1, dir);
-#endif
-                        y1--;
-                        e -= dx;
-                    }
-                }
-#if FILL
-                SET(x1, y1, dir);
-#endif
-            }
-        }
-    }
-#if !FILL
-    SET(x1, y1, dir);
-#endif
-}
-
-static void curve(struct font_renderer *renderer,
-                  font_s16_t x1, font_s16_t y1,
-                  font_s16_t x2, font_s16_t y2,
-                  font_s16_t cx, font_s16_t cy) {
-    font_s16_t i;
-
-    font_s16_t ix1, iy1;
-
-    ix1 = x1;
-    iy1 = y1;
-
-    for(i=1;i<=STEPS;i++){
-        font_s16_t ix2, iy2;
-
-        ix2 = (x1*(STEPS-i)*(STEPS-i)+
-               2*cx*i*(STEPS-i)+
-               x2*i*i)/(STEPS*STEPS);
-        iy2 = (y1*(STEPS-i)*(STEPS-i)+
-               2*cy*i*(STEPS-i)+
-               y2*i*i)/(STEPS*STEPS);
-
-        line(renderer, ix1, iy1, ix2, iy2);
-
-        ix1 = ix2;
-        iy1 = iy2;
-    }
-}
-
-/* FIXME: The glyphs are filled with the even-odd rule for now, instead of the
- *        non-zero winding rule that should be used instead. A more complex
- *        renderer would probably be required to follow the non-zero winding
- *        rule, so I removed the code that wasn't working, that I had written
- *        to try to follow the non-zero winding rule. Using the even-odd rule
- *        works well for many fonts, and I think this renderer is quite
- *        efficient -- or at least it could be, with a few optimizations.
- */
 int font_renderer_init(struct font_renderer *renderer, struct font *font,
-                       font_u32_t dpi, font_u32_t max_size) {
-    font_u32_t w = font_scale_size(font, dpi, max_size, font->xmax-font->xmin);
-    font_u32_t h = font_scale_size(font, dpi, max_size, font->ymax-font->ymin);
-    font_u32_t row_bytes = w/8+(w%8 != 0);
-
-    renderer->b = malloc(row_bytes*h);
-    if(renderer->b == NULL){
+                       font_u32_t dpi, font_u32_t width, font_u32_t height) {
+    renderer->data = malloc(width*height);
+    renderer->x_on_line = malloc(font->points_max+1);
+    if(renderer->data == NULL){
         return FE_MEM;
     }
 
-    renderer->glyph_width = 0;
-    renderer->advance_width = 0;
-    renderer->left_side_bearing = 0;
-    renderer->baseline = 0;
-    renderer->glyph_height = 0;
-
-    renderer->w = w;
-    renderer->row_bytes = row_bytes;
-    renderer->h = h;
-
+    renderer->width = width;
+    renderer->height = height;
     renderer->dpi = dpi;
-    renderer->max_size = max_size;
-
-    renderer->max_ascender = font_scale_size(font, dpi, max_size,
-                                             font->max_ascender);
 
     return FE_NONE;
 }
 
-void font_renderer_glyph(struct font_renderer *renderer,
-                         struct font *font, struct font_glyph *glyph,
-                         font_u32_t size) {
-    font_u32_t i;
-    font_u32_t b = 0;
+#define SIGN(x) ((x) ? (x) < 0 ? -1 : 1 : 0)
 
-    memset(renderer->b, 0, renderer->row_bytes*renderer->h);
-
-#if DEBUG_FONT
-    printf("Glyph UTF-8 code: %08x\n", glyph->code);
-#endif
-
-    for(i=0;i<glyph->contour_count;i++){
-        font_u32_t n;
-
-        font_s16_t x1, y1;
-        font_s16_t x2, y2;
-
-        font_s16_t cx, cy;
-
-        unsigned char has_control_point = 0;
-
-        /* FIXME: I think I'm handling curves incorrectly. */
-
-        x1 = font_scale_size(font, renderer->dpi, size, glyph->points[b].x);
-        y1 = font_scale_size(font, renderer->dpi, size,
-                             glyph->ymax-glyph->points[b].y);
-
-        for(n=b+1;n<=glyph->contour_ends[i];n++){
-            x2 = font_scale_size(font, renderer->dpi, size,
-                                 glyph->points[n].x);
-            y2 = font_scale_size(font, renderer->dpi, size,
-                                 glyph->ymax-glyph->points[n].y);
-
-            if(!glyph->points[n].on_curve){
-                if(has_control_point){
-                    font_s16_t dx = (cx+x2)/2;
-                    font_s16_t dy = (cy+y2)/2;
-
-                    curve(renderer, x1, y1, dx, dy, cx, cy);
-
-                    x1 = dx;
-                    y1 = dy;
-                }
-
-                cx = x2;
-                cy = y2;
-
-                has_control_point = 1;
-
-                continue;
-            }
-
-            if(has_control_point){
-#if !CURVES
-                line(renderer, x1, y1, cx, cy);
-                line(renderer, cx, cy, x2, y2);
-#else
-                curve(renderer, x1, y1, x2, y2, cx, cy);
-#endif
-
-                has_control_point = 0;
-            }else{
-                line(renderer, x1, y1, x2, y2);
-            }
-
-            x1 = x2;
-            y1 = y2;
-        }
-
-        if(has_control_point){
-            x2 = font_scale_size(font, renderer->dpi, size,
-                                 glyph->points[b].x);
-            y2 = font_scale_size(font, renderer->dpi, size,
-                                 glyph->ymax-glyph->points[b].y);
-
-#if !CURVES
-            line(renderer, x1, y1, cx, cy);
-            line(renderer, cx, cy, x2, y2);
-#else
-            curve(renderer, x1, y1, x2, y2, cx, cy);
-#endif
-        }else{
-            x2 = font_scale_size(font, renderer->dpi, size,
-                                 glyph->points[b].x);
-            y2 = font_scale_size(font, renderer->dpi, size,
-                                 glyph->ymax-glyph->points[b].y);
-
-            line(renderer, x1, y1, x2, y2);
-        }
-
-        b = glyph->contour_ends[i]+1;
-    }
-#if FILL
-    {
-        font_u32_t x, y;
-
-        for(y=0;y<renderer->h;y++){
-            unsigned char state = 0;
-
-            for(x=0;x<renderer->row_bytes;x++){
-                unsigned char c = renderer->b[y*renderer->row_bytes+x];
-                if(c){
-                    unsigned char i;
-                    unsigned char n = 0;
-
-                    for(i=0xFF;i;c>>=1,i>>=1){
-                        n >>= 1;
-                        state ^= c&1;
-                        n |= state<<7;
-                    }
-
-                    renderer->b[y*renderer->row_bytes+x] = n;
-                }else if(state){
-                    renderer->b[y*renderer->row_bytes+x] = 0xFF;
-                }
-            }
-        }
-    }
-#endif
-
-    renderer->baseline = font_scale_size(font, renderer->dpi, size,
-                                         glyph->ymax);
-    renderer->glyph_width = font_scale_size(font, renderer->dpi, size,
-                                            glyph->xmax-glyph->xmin);
-    renderer->x = font_scale_size(font, renderer->dpi, size, -glyph->xmin);
-    renderer->advance_width = font_scale_size(font, renderer->dpi, size,
-                                              glyph->advance_width);
-    renderer->left_side_bearing = font_scale_size(font, renderer->dpi, size,
-                                                  glyph->left_side_bearing);
-    renderer->glyph_height = font_scale_size(font, renderer->dpi, size,
-                                             glyph->ymax-glyph->ymin);
+static int compare_s32_t(const void *a, const void *b) {
+    return *(font_s32_t*)a < *(font_s32_t*)b ? -1 : 1;
 }
 
-void font_renderer_to_image(struct font_renderer *renderer,
-                            struct image *image,
-                            font_s32_t sx, font_s32_t sy) {
-    font_u32_t x, y;
-    /* TODO: Clip the area that can be drawn on the image first */
+struct font_glyph *font_scale_glyph(struct font *font, font_u32_t glyph_id,
+                                    font_u32_t size, font_u32_t dpi) {
+    struct font_glyph *glyph = font->glyphs+glyph_id;
+    struct font_glyph *new_glyph;
 
-    for(y=0;y<renderer->h;y++){
-        for(x=0;x<renderer->w;x++){
-            font_s32_t ix = (font_s32_t)x+sx;
-            font_s32_t iy = (font_s32_t)y+sy;
+    size_t i;
 
-            if(ix >= 0 && ix < (font_s32_t)image->w &&
-               iy >= 0 && iy < (font_s32_t)image->h){
-                pixel_t c = (renderer->b[y*renderer->row_bytes+x/8]>>(x%8))&1;
-                if(c){
-                    c = c ? IMAGE_RGBAINT(0, 0, 0, 0) :
-                            IMAGE_RGBAINT(255, 255, 255, 255);
+    new_glyph = malloc(sizeof(struct font_glyph));
+    if(new_glyph == NULL) return NULL;
 
-                    image->data[iy*image->w+ix] = c;
+    *new_glyph = *glyph;
+
+    new_glyph->points = malloc(glyph->point_count*sizeof(struct font_point));
+    new_glyph->contour_ends = malloc(glyph->contour_count*
+                                     sizeof(unsigned short int));
+
+    if(new_glyph->points == NULL || new_glyph->contour_ends == NULL){
+        free(new_glyph->points);
+        free(new_glyph->contour_ends);
+
+        free(new_glyph);
+
+        return NULL;
+    }
+
+    memcpy(new_glyph->contour_ends, glyph->contour_ends,
+           glyph->contour_count*sizeof(unsigned short int));
+
+    for(i=0;i<new_glyph->point_count;i++){
+        new_glyph->points[i].x = font_scale_size(font, dpi, size,
+                                                 glyph->points[i].x);
+        new_glyph->points[i].y = font_scale_size(font, dpi, size,
+                                                 glyph->points[i].y);
+        new_glyph->points[i].on_curve = glyph->points[i].on_curve;
+        printf("%d, %d\n", new_glyph->points[i].x, new_glyph->points[i].y);
+    }
+
+    new_glyph->advance_width = font_scale_size(font, dpi, size,
+                                               glyph->advance_width);
+    new_glyph->left_side_bearing = font_scale_size(font, dpi, size,
+                                                   glyph->left_side_bearing);
+
+    new_glyph->xmin = font_scale_size(font, dpi, size, glyph->xmin);
+    new_glyph->ymin = font_scale_size(font, dpi, size, glyph->ymin);
+    new_glyph->xmax = font_scale_size(font, dpi, size, glyph->xmax);
+    new_glyph->ymax = font_scale_size(font, dpi, size, glyph->ymax);
+
+    return new_glyph;
+}
+
+void font_free_glyph(struct font_glyph *glyph) {
+    free(glyph->points);
+    glyph->points = NULL;
+    free(glyph->contour_ends);
+    glyph->contour_ends = NULL;
+
+    free(glyph);
+}
+
+void font_renderer_glyph(struct font_renderer *renderer,
+                         struct font_glyph *glyph) {
+    font_s32_t *x_on_line = renderer->x_on_line;
+
+    font_u32_t i;
+
+    /* TODO: Optimize this. */
+
+    {
+        font_u32_t i;
+
+        for(i=0;i<glyph->point_count;i++){
+            glyph->points[i].y = glyph->ymax-glyph->points[i].y;
+        }
+    }
+
+    for(i=0;i<glyph->contour_count;i++){
+        font_s32_t min_y = renderer->height-1;
+        font_s32_t max_y = 0;
+        font_s32_t min_x = renderer->width-1;
+        font_s32_t max_x = 0;
+
+        font_u32_t start_point = i ? glyph->contour_ends[i-1] : 0;
+        font_u32_t end_point = glyph->contour_ends[i];
+
+        memset(renderer->data, 0, renderer->width*renderer->height);
+
+        {
+            font_u32_t i;
+
+            for(i=start_point;i<=end_point;i++){
+                font_s32_t x = glyph->points[i].x;
+                font_s32_t y = glyph->points[i].y;
+
+                if(y > max_y) max_y = y;
+                if(y < min_y) min_y = y;
+                if(x > max_x) max_x = x;
+                if(x < min_x) min_x = x;
+
+                glyph->points[i].x = x;
+                glyph->points[i].y = y;
+            }
+        }
+
+        if(min_y < 0) min_y = 0;
+        if(max_y > (font_s32_t)renderer->height) max_y = renderer->height;
+
+        {
+            font_s32_t y;
+            unsigned char *l = renderer->data+min_y*renderer->width;
+
+            for(y=min_y;y<max_y;y++){
+                font_u32_t i;
+                font_u32_t x_on_line_count = 0;
+
+                font_s32_t x = min_x;
+                font_s32_t next_x;
+                font_s32_t fill = 0;
+
+                for(i=start_point+1;i<=end_point;i++){
+                    struct font_point lower =
+                        glyph->points[i-1].y < glyph->points[i].y ?
+                        glyph->points[i-1] : glyph->points[i];
+                    struct font_point upper =
+                        glyph->points[i-1].y >= glyph->points[i].y ?
+                        glyph->points[i-1] : glyph->points[i];
+                    font_s32_t direction = SIGN(glyph->points[i].y-
+                                                glyph->points[i-1].y);
+
+                    if(lower.y <= y && upper.y > y){
+                        font_s32_t nx = lower.x+(upper.x-lower.x)*(y-lower.y)/
+                                        (upper.y-lower.y);
+                        if(nx < (font_s32_t)renderer->width){
+                            x_on_line[x_on_line_count++] = nx;
+                        }
+                    }
+                }
+
+                {
+                    struct font_point lower =
+                        glyph->points[end_point].y <
+                            glyph->points[start_point].y ?
+                        glyph->points[end_point] : glyph->points[start_point];
+                    struct font_point upper =
+                        glyph->points[end_point].y >=
+                            glyph->points[start_point].y ?
+                        glyph->points[end_point] : glyph->points[start_point];
+                    font_s32_t direction = SIGN(glyph->points[start_point].y-
+                                                glyph->points[end_point].y);
+
+                    if(lower.y <= y && upper.y > y){
+                        font_s32_t nx = lower.x+(upper.x-lower.x)*(y-lower.y)/
+                                        (upper.y-lower.y);
+                        if(nx < (font_s32_t)renderer->width){
+                            x_on_line[x_on_line_count++] = nx;
+                        }
+                    }
+                }
+
+                qsort(x_on_line, x_on_line_count, sizeof(font_s32_t),
+                      compare_s32_t);
+                {
+                    font_u32_t i;
+
+                    for(i=0;i<x_on_line_count;i++) printf("%d ", x_on_line[i]);
+                    puts("");
+                }
+
+                x_on_line[x_on_line_count++] = renderer->width;
+
+                next_x = x_on_line[0];
+                for(i=1;i<x_on_line_count && next_x<0;i++){
+                    next_x = x_on_line[i];
+                    fill = !fill;
+                }
+
+                x = 0;
+                for(;i<x_on_line_count;i++){
+                    if(fill){
+                        for(;x<next_x;x++,l++){
+                            *l = 255;
+                        }
+                    }else{
+                        l += next_x-x;
+                        x = next_x;
+                    }
+
+                    next_x = x_on_line[i];
+
+                    fill = !fill;
+                }
+
+                next_x = renderer->width;
+
+                if(fill){
+                    for(;x<next_x;x++,l++){
+                        *l = 255;
+                    }
+                }else{
+                    l += next_x-x;
+                    x = next_x;
                 }
             }
+        }
+    }
+
+    {
+        font_u32_t i;
+
+        for(i=0;i<glyph->point_count;i++){
+            glyph->points[i].y = glyph->ymax-glyph->points[i].y;
         }
     }
 }
 
 void font_renderer_free(struct font_renderer *renderer) {
-    free(renderer->b);
-    renderer->b = NULL;
+    free(renderer->x_on_line);
+    renderer->x_on_line = NULL;
+    free(renderer->data);
+    renderer->data = NULL;
 }
